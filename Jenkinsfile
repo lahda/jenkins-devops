@@ -23,16 +23,25 @@ pipeline {
             }
         }
 
-        stage('Test Container') {
-            steps {
-                sh '''
-                docker run -d --name test-app -p 5000:5000 $DOCKERHUB_REPO:$IMAGE_TAG
-                sleep 5
-                curl -f http://localhost:5000/health
-                docker rm -f test-app
-                '''
-            }
-        }
+stage('Test Container') {
+    steps {
+        sh '''
+        echo "Cleaning old container..."
+        docker rm -f test-app || true
+
+        echo "Starting test container..."
+        docker run -d --name test-app -p 5001:5000 alphonsine/taskmanager-app:4
+
+        sleep 5
+
+        echo "Testing health endpoint..."
+        curl -f http://localhost:5001/health
+
+        echo "Stopping test container..."
+        docker rm -f test-app
+        '''
+    }
+}
 
         stage('Login to DockerHub') {
             steps {
