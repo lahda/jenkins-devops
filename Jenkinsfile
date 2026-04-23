@@ -25,35 +25,39 @@ pipeline {
             }
         }
 
-        stage('Test Container') {
-            steps {
-                sh """
-                    echo "Cleaning old container..."
-                    docker rm -f $CONTAINER_NAME || true
+stage('Test Container') {
+    steps {
+        sh '''
+            echo "Cleaning old container..."
+            docker rm -f test-app || true
 
-                    echo "Starting container..."
-                    docker run -d --name $CONTAINER_NAME -p $PORT:5000 $IMAGE_NAME:$IMAGE_TAG
+            echo "Starting container..."
+            docker run -d --name test-app -p 5001:5000 taskmanager-app:${BUILD_NUMBER}
 
-                    echo "Waiting for app startup..."
-                    sleep 10
+            echo "Waiting for app startup..."
+            sleep 10
 
-                    echo "Checking container status..."
-                    docker ps -a | grep $CONTAINER_NAME || true
+            echo "Checking container status..."
+            docker ps -a | grep test-app
 
-                    echo "Testing health endpoint..."
-                    for i in \$(seq 1 10); do
-                        echo "Attempt \$i"
-                        curl -f http://localhost:$PORT/health && exit 0
-                        sleep 3
-                    done
-
+            echo "Testing health endpoint..."
+            for i in $(seq 1 10); do
+                echo "Attempt $i"
+                # ← 172.17.0.1 au lieu de localhost
+                if curl -f http://172.17.0.1:5001/health; then
+                    echo "✅ App is healthy!"
+                    break
+                fi
+                if [ $i -eq 10 ]; then
                     echo "App failed to respond"
-                    docker logs $CONTAINER_NAME
+                    docker logs test-app
                     exit 1
-                """
-            }
-        }
-
+                fi
+                sleep 3
+            done
+        '''
+    }
+}
         stage('Login to DockerHub') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
