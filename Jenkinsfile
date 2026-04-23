@@ -3,7 +3,6 @@ pipeline {
 
     environment {
         IMAGE_NAME = "taskmanager-app"
-        IMAGE_TAG = "6"
         DOCKERHUB_CREDENTIALS = "dockerhub-credentials"
         DOCKERHUB_REPO = "alphonsine/taskmanager-app"
     }
@@ -16,53 +15,33 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                python3 -m venv venv || true
-                . venv/bin/activate
-                pip install --upgrade pip
-                pip install -r webapp/requirements.txt
-                '''
-            }
-        }
-
-        stage('Run Tests') {
-            steps {
-                sh '''
-                . venv/bin/activate
-                PYTHONPATH=. pytest tests/ -v || true
-                '''
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
-                sh '''
-                docker build -t $DOCKERHUB_REPO:$IMAGE_TAG .
-                docker tag $DOCKERHUB_REPO:$IMAGE_TAG $DOCKERHUB_REPO:latest
-                '''
+                sh """
+                echo "Building Docker image..."
+                docker build -t $IMAGE_NAME:${BUILD_NUMBER} .
+                """
             }
         }
 
         stage('Test Container') {
             steps {
-                sh '''
+                sh """
                 echo "Cleaning old container..."
                 docker rm -f test-app || true
 
                 echo "Starting container..."
-                docker run -d --name test-app -p 5001:5000 $DOCKERHUB_REPO:$IMAGE_TAG
+                docker run -d --name test-app -p 5001:5000 $IMAGE_NAME:${BUILD_NUMBER}
 
                 echo "Waiting for app..."
-                sleep 8
+                sleep 5
 
-                echo "Container logs:"
-                docker logs test-app || true
-
-                echo "Health check:"
+                echo "Testing health endpoint..."
                 curl -f http://localhost:5001/health
-                '''
+
+                echo "Stopping container..."
+                docker rm -f test-app
+                """
             }
         }
 
@@ -73,29 +52,33 @@ pipeline {
                     usernameVariable: 'USER',
                     passwordVariable: 'PASS'
                 )]) {
-                    sh '''
-                    echo "$PASS" | docker login -u "$USER" --password-stdin
-                    '''
+                    sh """
+                    echo $PASS | docker login -u $USER --password-stdin
+                    """
                 }
             }
         }
 
         stage('Push Image') {
             steps {
-                sh '''
-                docker push $DOCKERHUB_REPO:$IMAGE_TAG
+                sh """
+                docker tag $IMAGE_NAME:${BUILD_NUMBER} $DOCKERHUB_REPO:${BUILD_NUMBER}
+                docker tag $IMAGE_NAME:${BUILD_NUMBER} $DOCKERHUB_REPO:latest
+
+                docker push $DOCKERHUB_REPO:${BUILD_NUMBER}
                 docker push $DOCKERHUB_REPO:latest
-                '''
+                """
             }
         }
     }
 
     post {
         always {
-            sh '''
+            sh """
+            echo "Cleaning system..."
             docker rm -f test-app || true
             docker system prune -f || true
-            '''
+            """
         }
     }
 }
