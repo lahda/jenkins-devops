@@ -58,25 +58,34 @@ stage('Test Container') {
         '''
     }
 }
-        stage('Login to DockerHub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh """
-                        echo $PASS | docker login -u $USER --password-stdin
-                    """
-                }
-            }
-        }
-
-        stage('Push Image') {
-            steps {
-                sh """
-                    docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:$IMAGE_TAG
-                    docker push $IMAGE_NAME:$IMAGE_TAG
-                """
-            }
+stage('Login to DockerHub') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-creds',
+            usernameVariable: 'USER',
+            passwordVariable: 'PASS'
+        )]) {
+            sh '''
+                # ✅ Utiliser des variables shell (pas Groovy "$VAR")
+                echo "$PASS" | docker login -u "$USER" --password-stdin
+            '''
         }
     }
+}
+
+stage('Push Image') {
+    steps {
+        sh '''
+            # ✅ Tag avec le username Docker Hub
+            docker tag taskmanager-app:${BUILD_NUMBER} alphonsine/taskmanager-app:${BUILD_NUMBER}
+            docker tag taskmanager-app:${BUILD_NUMBER} alphonsine/taskmanager-app:latest
+
+            # ✅ Push avec le bon namespace
+            docker push alphonsine/taskmanager-app:${BUILD_NUMBER}
+            docker push alphonsine/taskmanager-app:latest
+        '''
+    }
+}
 
     post {
         always {
