@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DevOps Task Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #13131a;
+      --border: #2a2a3a;
+      --accent: #00ff88;
+      --accent2: #7b61ff;
+      --text: #e8e8f0;
+      --muted: #6b6b80;
+      --danger: #ff4466;
+      --warning: #ffaa00;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1.5rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+    }
+    .logo {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .logo span { color: var(--accent); }
+    .health-badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.75rem;
+      padding: 0.3rem 0.8rem;
+      border-radius: 2rem;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+    main { max-width: 900px; margin: 0 auto; padding: 2rem; }
+    h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 0.4rem;
+      letter-spacing: -0.04em;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      font-size: 0.8rem;
+      margin-bottom: 2rem;
+    }
+    .add-form {
+      display: flex;
+      gap: 0.8rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+    input, select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.7rem 1rem;
+      border-radius: 8px;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input { flex: 1; min-width: 200px; }
+    input:focus, select:focus { border-color: var(--accent); }
+    button {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 0.7rem 1.5rem;
+      border-radius: 8px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.85; }
+    .task-list { display: flex; flex-direction: column; gap: 0.8rem; }
+    .task-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .task-info { display: flex; align-items: center; gap: 0.8rem; flex: 1; }
+    .task-title { font-weight: 700; }
+    .task-title.done { text-decoration: line-through; color: var(--muted); }
+    .badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.68rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .badge-done { background: #00ff8822; color: var(--accent); }
+    .badge-pending { background: #ffaa0022; color: var(--warning); }
+    .badge-high { background: #ff446622; color: var(--danger); }
+    .badge-medium { background: #7b61ff22; color: var(--accent2); }
+    .badge-low { background: #ffffff11; color: var(--muted); }
+    .del-btn {
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid var(--danger);
+      padding: 0.3rem 0.8rem;
+      font-size: 0.8rem;
+      border-radius: 6px;
+    }
+    .del-btn:hover { background: var(--danger); color: #fff; opacity: 1; }
+    .stats {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      flex: 1;
+      min-width: 130px;
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .stat-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 3rem;
+      font-family: 'Space Mono', monospace;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">devops<span>.</span>tasks</div>
+    <div class="health-badge" id="healthBadge">● checking...</div>
+  </header>
+  <main>
+    <h2>Task Manager</h2>
+    <p class="subtitle">// CI/CD pipeline demo project</p>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="totalCount">0</div>
+        <div class="stat-label">Total tasks</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="doneCount" style="color: var(--accent)">0</div>
+        <div class="stat-label">Completed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="pendingCount" style="color: var(--warning)">0</div>
+        <div class="stat-label">Pending</div>
+      </div>
+    </div>
+
+    <div class="add-form">
+      <input type="text" id="newTitle" placeholder="Nouvelle tâche..." />
+      <select id="newPriority">
+        <option value="high">🔴 High</option>
+        <option value="medium" selected>🟡 Medium</option>
+        <option value="low">🟢 Low</option>
+      </select>
+      <button onclick="addTask()">+ Ajouter</button>
+    </div>
+
+    <div class="task-list" id="taskList"></div>
+  </main>
+
+  <script>
+    async function loadTasks() {
+      const res = await fetch('/api/tasks');
+      const data = await res.json();
+      renderTasks(data.tasks);
+    }
+
+    function renderTasks(tasks) {
+      const list = document.getElementById('taskList');
+      document.getElementById('totalCount').textContent = tasks.length;
+      document.getElementById('doneCount').textContent = tasks.filter(t => t.status === 'done').length;
+      document.getElementById('pendingCount').textContent = tasks.filter(t => t.status === 'pending').length;
+
+      if (!tasks.length) {
+        list.innerHTML = '<div class="empty">// aucune tâche trouvée</div>';
+        return;
+      }
+      list.innerHTML = tasks.map(t => `
+        <div class="task-card">
+          <div class="task-info">
+            <span class="task-title ${t.status === 'done' ? 'done' : ''}">${t.title}</span>
+            <span class="badge badge-${t.status}">${t.status}</span>
+            <span class="badge badge-${t.priority}">${t.priority}</span>
+          </div>
+          <button class="del-btn" onclick="deleteTask(${t.id})">✕ Supprimer</button>
+        </div>
+      `).join('');
+    }
+
+    async function addTask() {
+      const title = document.getElementById('newTitle').value.trim();
+      const priority = document.getElementById('newPriority').value;
+      if (!title) return;
+      await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, priority })
+      });
+      document.getElementById('newTitle').value = '';
+      loadTasks();
+    }
+
+    async function deleteTask(id) {
+      await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+      loadTasks();
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        const badge = document.getElementById('healthBadge');
+        badge.textContent = `● healthy | v${data.version}`;
+        badge.style.color = 'var(--accent)';
+        badge.style.borderColor = 'var(--accent)';
+      } catch {
+        document.getElementById('healthBadge').textContent = '● offline';
+      }
+    }
+
+    document.getElementById('newTitle').addEventListener('keypress', e => {
+      if (e.key === 'Enter') addTask();
+    });
+
+    loadTasks();
+    checkHealth();
+  </script>
+</body>
+</html>
