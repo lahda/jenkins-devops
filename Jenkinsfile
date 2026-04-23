@@ -1,107 +1,114 @@
 pipeline {
-    agent any
+    agent none
 
     environment {
+        DOCKERHUB_AUTH = credentials('dockerhub-creds')
+        ID_DOCKER      = "${DOCKERHUB_AUTH_USR}"
+        PORT_EXPOSED   = "80"
         IMAGE_NAME     = "taskmanager-app"
-        DOCKER_USER    = "alphonsine"
-        BUILD_TAG      = "${BUILD_NUMBER}"
-        CONTAINER_NAME = "test-app"
-        HOST_IP        = "172.17.0.1"
-        STAGING_HOST   = "172.31.22.38"
-        PROD_HOST      = "172.31.31.248"      // ← remplacez par l'IP privée de votre Prod
-        DEPLOY_USER    = "ubuntu"
-    }
-
-    options {
-        buildDiscarder(logRotator(numToKeepStr: '5'))
-        timeout(time: 20, unit: 'MINUTES')
-        disableConcurrentBuilds()
+        IMAGE_TAG      = "${BUILD_NUMBER}"
     }
 
     stages {
 
-        stage('Checkout') {
+        // ─────────────────────────────────────
+        // BUILD
+        // ─────────────────────────────────────
+        stage('Build Image') {
+            agent any
             steps {
-                checkout scm
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                sh '''
-                    echo "Building Docker image..."
-                    docker build -t ${IMAGE_NAME}:${BUILD_TAG} .
-                '''
-            }
-        }
-
-        stage('Test Container') {
-            steps {
-                sh '''
-                    docker rm -f ${CONTAINER_NAME} || true
-                    docker run -d --name ${CONTAINER_NAME} -p 5001:5000 ${IMAGE_NAME}:${BUILD_TAG}
-                    sleep 10
-                    for i in $(seq 1 10); do
-                        echo "Attempt $i"
-                        if curl -f http://${HOST_IP}:5001/health; then
-                            echo "App is healthy!"
-                            break
-                        fi
-                        if [ $i -eq 10 ]; then
-                            docker logs ${CONTAINER_NAME}
-                            exit 1
-                        fi
-                        sleep 3
-                    done
-                '''
-            }
-        }
-
-        stage('Push to DockerHub') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'USER',
-                    passwordVariable: 'PASS'
-                )]) {
-                    sh '''
-                        echo "$PASS" | docker login -u "$USER" --password-stdin
-                        docker tag ${IMAGE_NAME}:${BUILD_TAG} ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                        docker tag ${IMAGE_NAME}:${BUILD_TAG} ${DOCKER_USER}/${IMAGE_NAME}:latest
-                        docker push ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                        docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
-                        docker logout
-                    '''
-                }
+                sh 'docker build -t ${ID_DOCKER}/${IMAGE_NAME}:${IMAGE_TAG} .'
             }
         }
 
         // ─────────────────────────────────────
-        // STAGING
+        // TEST LOCAL
         // ─────────────────────────────────────
-        stage('Deploy to Staging') {
+        stage('Run container') {
+            agent any
+            steps {
+                sh '''
+                    echo "Clean environment"
+                    docker rm -f $IMAGE_NAME || echo "container does not exist"
+                    docker run --name $IMAGE_NAME -d \
+                        -p ${PORT_EXPOSED}:5000 \
+                        -e PORT=5000 \
+                        ${ID_DOCKER}/${IMAGE_NAME}:${IMAGE_TAG}
+                    sleep 5
+                '''
+            }
+        }
+
+        stage('Test image') {
+            agent any
+            steps {
+                sh '''
+                    curl -f http://172.17.0.1:${PORT_EXPOSED}/health | grep -q "healthy"
+                    echo "Test passed!"
+                '''
+            }
+        }
+
+        stage('Clean container') {
+            agent any
+            steps {
+                sh '''
+                    docker stop $IMAGE_NAME || true
+                    docker rm $IMAGE_NAME || true
+                '''
+            }
+        }
+
+        // ─────────────────────────────────────
+        // PUSH DOCKERHUB
+        // ─────────────────────────────────────
+        stage('Push Image to DockerHub') {
+            agent any
+            steps {
+                sh '''
+                    # ✅ --password-stdin évite le mot de passe dans les logs
+                    echo $DOCKERHUB_AUTH_PSW | docker login \
+                        -u $DOCKERHUB_AUTH_USR \
+                        --password-stdin
+                    docker push ${ID_DOCKER}/${IMAGE_NAME}:${IMAGE_TAG}
+                    docker tag ${ID_DOCKER}/${IMAGE_NAME}:${IMAGE_TAG} \
+                               ${ID_DOCKER}/${IMAGE_NAME}:latest
+                    docker push ${ID_DOCKER}/${IMAGE_NAME}:latest
+                    docker logout
+                '''
+            }
+        }
+
+        // ─────────────────────────────────────
+        // DEPLOY STAGING
+        // ─────────────────────────────────────
+        stage('Deploy in staging') {
+            agent any
+            environment {
+                STAGING_HOST = "172.31.22.38"   // ← votre IP privée Staging
+            }
             steps {
                 sshagent(credentials: ['staging-ssh']) {
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${STAGING_HOST} "
-                            docker pull ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                            docker rm -f ${IMAGE_NAME}-staging || true
-                            docker run -d \
-                                --name ${IMAGE_NAME}-staging \
-                                --restart always \
-                                -p 80:5000 \
-                                -e PORT=5000 \
-                                ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                            sleep 3
-                            docker ps | grep ${IMAGE_NAME}-staging
-                            echo 'Staging deployment OK'
-                        "
+                        command1="echo $DOCKERHUB_AUTH_PSW | docker login -u $DOCKERHUB_AUTH_USR --password-stdin"
+                        command2="docker pull $ID_DOCKER/$IMAGE_NAME:$IMAGE_TAG"
+                        command3="docker rm -f webapp || echo 'app does not exist'"
+                        command4="docker run -d -p 80:5000 -e PORT=5000 --name webapp --restart always $ID_DOCKER/$IMAGE_NAME:$IMAGE_TAG"
+                        command5="sleep 3 && docker ps | grep webapp"
+
+                        # ✅ ssh (sans double ssh)
+                        ssh -o StrictHostKeyChecking=no ubuntu@${STAGING_HOST} \
+                            "$command1 && $command2 && $command3 && $command4 && $command5"
                     '''
                 }
             }
         }
 
-        stage('Smoke Test Staging') {
+        stage('Verify Staging') {
+            agent any
+            environment {
+                STAGING_HOST = "172.31.22.38"
+            }
             steps {
                 sh '''
                     sleep 5
@@ -115,40 +122,45 @@ pipeline {
         // APPROBATION MANUELLE
         // ─────────────────────────────────────
         stage('Approval for Production') {
+            agent none
             steps {
                 timeout(time: 30, unit: 'MINUTES') {
                     input message: 'Staging OK ? Déployer en PRODUCTION ?',
-                          ok: 'Oui, déployer en prod !'
+                          ok: 'Oui, déployer !'
                 }
             }
         }
 
         // ─────────────────────────────────────
-        // PRODUCTION
+        // DEPLOY PRODUCTION
         // ─────────────────────────────────────
-        stage('Deploy to Production') {
+        stage('Deploy in prod') {
+            agent any
+            environment {
+                PROD_HOST = "172.31.31.248"        // ← votre IP privée Prod
+            }
             steps {
                 sshagent(credentials: ['prod-ssh']) {
                     sh '''
-                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${PROD_HOST} "
-                            docker pull ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                            docker rm -f ${IMAGE_NAME}-prod || true
-                            docker run -d \
-                                --name ${IMAGE_NAME}-prod \
-                                --restart always \
-                                -p 80:5000 \
-                                -e PORT=5000 \
-                                ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                            sleep 3
-                            docker ps | grep ${IMAGE_NAME}-prod
-                            echo 'Production deployment OK'
-                        "
+                        command1="echo $DOCKERHUB_AUTH_PSW | docker login -u $DOCKERHUB_AUTH_USR --password-stdin"
+                        command2="docker pull $ID_DOCKER/$IMAGE_NAME:$IMAGE_TAG"
+                        command3="docker rm -f webapp || echo 'app does not exist'"
+                        command4="docker run -d -p 80:5000 -e PORT=5000 --name webapp --restart always $ID_DOCKER/$IMAGE_NAME:$IMAGE_TAG"
+                        command5="sleep 3 && docker ps | grep webapp"
+
+                        # ✅ ssh (sans double ssh)
+                        ssh -o StrictHostKeyChecking=no ubuntu@${PROD_HOST} \
+                            "$command1 && $command2 && $command3 && $command4 && $command5"
                     '''
                 }
             }
         }
 
         stage('Verify Production') {
+            agent any
+            environment {
+                PROD_HOST = "172.31.X.X"
+            }
             steps {
                 sh '''
                     sleep 5
@@ -159,18 +171,27 @@ pipeline {
         }
     }
 
+    // ─────────────────────────────────────
+    // NETTOYAGE FINAL
+    // ─────────────────────────────────────
     post {
         always {
-            sh '''
-                docker rm -f ${CONTAINER_NAME} || true
-                docker system prune -f || true
-            '''
+            node('built-in') {
+                sh '''
+                    docker rm -f $IMAGE_NAME || true
+                    docker system prune -f || true
+                '''
+            }
         }
         success {
-            echo "PIPELINE SUCCESS - ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG} deployé en PROD"
+            node('built-in') {
+                echo "✅ PIPELINE SUCCESS — ${ID_DOCKER}/${IMAGE_NAME}:${IMAGE_TAG}"
+            }
         }
         failure {
-            echo "PIPELINE FAILED - Build #${BUILD_NUMBER}"
+            node('built-in') {
+                echo "❌ PIPELINE FAILED — Build #${BUILD_NUMBER}"
+            }
         }
     }
 }
