@@ -7,10 +7,8 @@ pipeline {
         BUILD_TAG      = "${BUILD_NUMBER}"
         CONTAINER_NAME = "test-app"
         HOST_IP        = "172.17.0.1"
-
-        // ← Remplacez par les IPs privées de vos EC2
         STAGING_HOST   = "172.31.22.38"
-        PROD_HOST      = "172.31.31.248"
+        PROD_HOST      = "172.31.31.248"      // ← remplacez par l'IP privée de votre Prod
         DEPLOY_USER    = "ubuntu"
     }
 
@@ -43,7 +41,6 @@ pipeline {
                     docker rm -f ${CONTAINER_NAME} || true
                     docker run -d --name ${CONTAINER_NAME} -p 5001:5000 ${IMAGE_NAME}:${BUILD_TAG}
                     sleep 10
-
                     for i in $(seq 1 10); do
                         echo "Attempt $i"
                         if curl -f http://${HOST_IP}:5001/health; then
@@ -80,41 +77,33 @@ pipeline {
         }
 
         // ─────────────────────────────────────
-        // DÉPLOIEMENT STAGING
+        // STAGING
         // ─────────────────────────────────────
         stage('Deploy to Staging') {
             steps {
-                withCredentials([sshUserPrivateKey(
-                    credentialsId: 'staging-ssh',
-                    keyFileVariable: 'SSH_KEY'
-                )]) {
+                sshagent(credentials: ['staging-ssh']) {
                     sh '''
-                        echo "Deploying to STAGING: ${STAGING_HOST}"
-                        ssh -i $SSH_KEY \
-                            -o StrictHostKeyChecking=no \
-                            ${DEPLOY_USER}@${STAGING_HOST} "
-                                docker pull ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                                docker rm -f ${IMAGE_NAME}-staging || true
-                                docker run -d \
-                                    --name ${IMAGE_NAME}-staging \
-                                    --restart always \
-                                    -p 80:5000 \
-                                    -e PORT=5000 \
-                                    ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                                sleep 3
-                                docker ps | grep ${IMAGE_NAME}-staging
-                                echo 'Staging deployment OK'
-                            "
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${STAGING_HOST} "
+                            docker pull ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
+                            docker rm -f ${IMAGE_NAME}-staging || true
+                            docker run -d \
+                                --name ${IMAGE_NAME}-staging \
+                                --restart always \
+                                -p 80:5000 \
+                                -e PORT=5000 \
+                                ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
+                            sleep 3
+                            docker ps | grep ${IMAGE_NAME}-staging
+                            echo 'Staging deployment OK'
+                        "
                     '''
                 }
             }
         }
 
-        // Test de smoke sur le staging
         stage('Smoke Test Staging') {
             steps {
                 sh '''
-                    echo "Testing staging..."
                     sleep 5
                     curl -f http://${STAGING_HOST}/health | grep -q "healthy"
                     echo "Staging is healthy!"
@@ -123,7 +112,7 @@ pipeline {
         }
 
         // ─────────────────────────────────────
-        // APPROBATION MANUELLE AVANT PROD
+        // APPROBATION MANUELLE
         // ─────────────────────────────────────
         stage('Approval for Production') {
             steps {
@@ -135,31 +124,25 @@ pipeline {
         }
 
         // ─────────────────────────────────────
-        // DÉPLOIEMENT PRODUCTION
+        // PRODUCTION
         // ─────────────────────────────────────
         stage('Deploy to Production') {
             steps {
-                withCredentials([sshUserPrivateKey(
-                    credentialsId: 'prod-ssh',
-                    keyFileVariable: 'SSH_KEY'
-                )]) {
+                sshagent(credentials: ['prod-ssh']) {
                     sh '''
-                        echo "Deploying to PRODUCTION: ${PROD_HOST}"
-                        ssh -i $SSH_KEY \
-                            -o StrictHostKeyChecking=no \
-                            ${DEPLOY_USER}@${PROD_HOST} "
-                                docker pull ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                                docker rm -f ${IMAGE_NAME}-prod || true
-                                docker run -d \
-                                    --name ${IMAGE_NAME}-prod \
-                                    --restart always \
-                                    -p 80:5000 \
-                                    -e PORT=5000 \
-                                    ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
-                                sleep 3
-                                docker ps | grep ${IMAGE_NAME}-prod
-                                echo 'Production deployment OK'
-                            "
+                        ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${PROD_HOST} "
+                            docker pull ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
+                            docker rm -f ${IMAGE_NAME}-prod || true
+                            docker run -d \
+                                --name ${IMAGE_NAME}-prod \
+                                --restart always \
+                                -p 80:5000 \
+                                -e PORT=5000 \
+                                ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
+                            sleep 3
+                            docker ps | grep ${IMAGE_NAME}-prod
+                            echo 'Production deployment OK'
+                        "
                     '''
                 }
             }
@@ -184,7 +167,7 @@ pipeline {
             '''
         }
         success {
-            echo "PIPELINE SUCCESS - ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG} déployé en PROD"
+            echo "PIPELINE SUCCESS - ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG} deployé en PROD"
         }
         failure {
             echo "PIPELINE FAILED - Build #${BUILD_NUMBER}"
