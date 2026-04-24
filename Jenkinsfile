@@ -71,7 +71,7 @@ pipeline {
         stage('Deploy in staging') {
             agent any
             environment {
-                STAGING_HOST = "172.31.22.38"
+                STAGING_HOST = "172.31.24.9"
             }
             steps {
                 sshagent(credentials: ['staging-ssh']) {
@@ -116,7 +116,7 @@ pipeline {
         stage('Deploy in prod') {
             agent any
             environment {
-                PROD_HOST = "172.31.X.X"    // ← IP privée Prod
+                PROD_HOST = "172.31.16.182"    // ← IP privée Prod
             }
             steps {
                 sshagent(credentials: ['prod-ssh']) {
