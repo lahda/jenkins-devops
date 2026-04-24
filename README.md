@@ -6,7 +6,7 @@ Application Flask containerisée avec pipeline CI/CD Jenkins complet.
 ## Structure du projet
 
 ```
-devops-project/
+jenkins-devops/
 ├── Dockerfile              # Image multi-stage (build + production)
 ├── Jenkinsfile             # Pipeline CI/CD complet (6 stages)
 ├── docker-compose.yml      # Dev local
