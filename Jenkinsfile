@@ -6,7 +6,16 @@ pipeline {
         ID_DOCKER      = "${DOCKERHUB_AUTH_USR}"
         IMAGE_NAME     = "taskmanager-app"
         IMAGE_TAG      = "${BUILD_NUMBER}"
-        TEST_PORT      = "5001"    // ← port de test séparé
+        CONTAINER_TEST = "taskmanager-app-test-${BUILD_NUMBER}"
+        TEST_PORT      = "5001"
+        STAGING_HOST   = "172.31.24.9"      // ← IP Staging
+        PROD_HOST      = "172.31.16.182"    // ← IP Prod
+    }
+
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        timeout(time: 30, unit: 'MINUTES')
     }
 
     stages {
@@ -23,10 +32,8 @@ pipeline {
             steps {
                 sh '''
                     echo "Clean environment"
-                    docker rm -f ${IMAGE_NAME} || echo "container does not exist"
-
-                    # ✅ Port 5001 pour éviter le conflit avec la prod (port 80)
-                    docker run --name ${IMAGE_NAME} -d \
+                    docker rm -f ${CONTAINER_TEST} || echo "container does not exist"
+                    docker run --name ${CONTAINER_TEST} -d \
                         -p ${TEST_PORT}:5000 \
                         -e PORT=5000 \
                         ${ID_DOCKER}/${IMAGE_NAME}:${IMAGE_TAG}
@@ -39,6 +46,7 @@ pipeline {
             agent any
             steps {
                 sh '''
+                    docker ps | grep ${CONTAINER_TEST} || (echo "Container not running!" && exit 1)
                     curl -f http://172.17.0.1:${TEST_PORT}/health | grep -q "healthy"
                     echo "Test passed!"
                 '''
@@ -48,7 +56,7 @@ pipeline {
         stage('Clean container') {
             agent any
             steps {
-                sh 'docker rm -f ${IMAGE_NAME} || true'
+                sh 'docker rm -f ${CONTAINER_TEST} || true'
             }
         }
 
@@ -70,9 +78,6 @@ pipeline {
 
         stage('Deploy in staging') {
             agent any
-            environment {
-                STAGING_HOST = "172.31.24.9"
-            }
             steps {
                 sshagent(credentials: ['staging-ssh']) {
                     sh '''
@@ -81,7 +86,6 @@ pipeline {
                         command3="docker rm -f webapp || echo 'app does not exist'"
                         command4="docker run -d -p 80:5000 -e PORT=5000 --name webapp --restart always $ID_DOCKER/$IMAGE_NAME:$IMAGE_TAG"
                         command5="sleep 3 && docker ps | grep webapp"
-
                         ssh -o StrictHostKeyChecking=no ubuntu@${STAGING_HOST} \
                             "$command1 && $command2 && $command3 && $command4 && $command5"
                     '''
@@ -91,9 +95,6 @@ pipeline {
 
         stage('Verify Staging') {
             agent any
-            environment {
-                STAGING_HOST = "172.31.22.38"
-            }
             steps {
                 sh '''
                     sleep 5
@@ -115,9 +116,6 @@ pipeline {
 
         stage('Deploy in prod') {
             agent any
-            environment {
-                PROD_HOST = "172.31.16.182"    // ← IP privée Prod
-            }
             steps {
                 sshagent(credentials: ['prod-ssh']) {
                     sh '''
@@ -126,7 +124,6 @@ pipeline {
                         command3="docker rm -f webapp || echo 'app does not exist'"
                         command4="docker run -d -p 80:5000 -e PORT=5000 --name webapp --restart always $ID_DOCKER/$IMAGE_NAME:$IMAGE_TAG"
                         command5="sleep 3 && docker ps | grep webapp"
-
                         ssh -o StrictHostKeyChecking=no ubuntu@${PROD_HOST} \
                             "$command1 && $command2 && $command3 && $command4 && $command5"
                     '''
@@ -136,9 +133,6 @@ pipeline {
 
         stage('Verify Production') {
             agent any
-            environment {
-                PROD_HOST = "172.31.X.X"
-            }
             steps {
                 sh '''
                     sleep 5
@@ -153,7 +147,7 @@ pipeline {
         always {
             node('built-in') {
                 sh '''
-                    docker rm -f ${IMAGE_NAME} || true
+                    docker rm -f ${CONTAINER_TEST} || true
                     docker system prune -f || true
                 '''
             }
