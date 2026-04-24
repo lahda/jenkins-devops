@@ -1,3 +1,6 @@
+/* import shared library */
+@Library('shared-library')_
+
 pipeline {
     agent none
 
@@ -8,8 +11,8 @@ pipeline {
         IMAGE_TAG      = "${BUILD_NUMBER}"
         CONTAINER_TEST = "taskmanager-app-test-${BUILD_NUMBER}"
         TEST_PORT      = "5001"
-        STAGING_HOST   = "172.31.24.9"      // ← IP Staging
-        PROD_HOST      = "172.31.16.182"    // ← IP Prod
+        STAGING_HOST   = "172.31.24.9"
+        PROD_HOST      = "172.31.16.182"
     }
 
     options {
@@ -145,22 +148,9 @@ pipeline {
 
     post {
         always {
-            node('built-in') {
-                sh '''
-                    docker rm -f ${CONTAINER_TEST} || true
-                    docker system prune -f || true
-                '''
+            script {
+                slackNotifier currentBuild.result
             }
         }
-        success {
-            node('built-in') {
-                echo "✅ PIPELINE SUCCESS — ${ID_DOCKER}/${IMAGE_NAME}:${IMAGE_TAG}"
-            }
-        }
-        failure {
-            node('built-in') {
-                echo "❌ PIPELINE FAILED — Build #${BUILD_NUMBER}"
-            }
-        }
-    }
-}
+    } 
+}     
