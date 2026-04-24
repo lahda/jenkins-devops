@@ -1,6 +1,7 @@
 # DevOps Task Manager 🚀
 
 Application Flask containerisée avec pipeline CI/CD Jenkins complet.
+[![Build Status](http://34.229.127.239:8080/job/deployment/badge/icon)](http://34.229.127.239:8080/job/deployment/)
 
 ## Structure du projet
 
